@@ -61,11 +61,12 @@ def get_access_token():
 
 
 # GET method to get album
-def get_album_data(album_id, access_token):
+def get_album_data(access_token, album_id, page_size=5):
     """
-    Fetch full album metadata from the Spotify API for the given album_id.
-    Requires a valid Bearer access_token obtained from get_access_token().
-    Returns the raw JSON response dict, or None on error.
+    Fetch album metadata and all tracks from the Spotify API.
+    Paginates through the tracks endpoint using page_size as the chunk size,
+    collecting every track regardless of how many pages are needed.
+    Returns the album dict with tracks.items containing the full track list.
     """
 
     url_album = f"https://api.spotify.com/v1/albums/{album_id}"
@@ -75,10 +76,22 @@ def get_album_data(album_id, access_token):
     }
 
     try:
-        response = requests.get(url_album, headers=headers)
+        response = requests.get(url_album, headers=headers, params={"limit": page_size})
         response.raise_for_status()
-        # pprint(response.json())
-        return response.json()
+        album_data = response.json()
+
+        all_tracks = album_data["tracks"]["items"]
+        next_url = album_data["tracks"].get("next")
+
+        while next_url:
+            response = requests.get(next_url, headers=headers)
+            response.raise_for_status()
+            page = response.json()
+            all_tracks.extend(page["items"])
+            next_url = page.get("next")
+
+        album_data["tracks"]["items"] = all_tracks
+        return album_data
 
     except requests.HTTPError as e:
         print(f"HTTP error fetching album data: {e}")
@@ -155,7 +168,7 @@ if __name__ == "__main__":
     access_token = token_data["access_token"]
 
     album_id = "4aawyAB9vmqN3uQ7FjRGTy"
-    album_data = get_album_data(album_id, access_token)
+    album_data = get_album_data(access_token, album_id, page_size=5)
 
     tracks = process_album_data(album_data)
     save_csv(tracks)
